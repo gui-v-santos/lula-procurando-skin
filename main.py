@@ -29,7 +29,7 @@ CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
 ITEM_NAME_RAW = "★ Bayonet | Rust Coat (Battle-Scarred)"
 APPID = 730
 CURRENCY = 7
-MAX_PRICE = 900.0
+MAX_PRICE = 1200.0
 
 ITEM_NAME = urllib.parse.quote(ITEM_NAME_RAW)
 PRICE_URL = "https://steamcommunity.com/market/priceoverview/"
