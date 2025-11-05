@@ -10,6 +10,7 @@ import urllib.parse
 import time
 from flask import Flask
 from dotenv import load_dotenv
+import asyncio  # ✅ IMPORTANTE
 
 # ============= FLASK (PARA RENDER) =============
 app = Flask(__name__)
@@ -25,7 +26,7 @@ def run_flask():
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 CHANNEL_ID = int(os.getenv('CHANNEL_ID'))
-ITEM_NAME_RAW = "★ Nomad Knife | Urban Masked (Field-Tested)"
+ITEM_NAME_RAW = "★ Bayonet | Rust Coat (Battle-Scarred)"
 APPID = 730
 CURRENCY = 7
 MAX_PRICE = 900.0
@@ -48,10 +49,10 @@ session.headers.update({
 
 last_float_success = 0
 
-def get_price():
+async def get_price():
     params = {'appid': APPID, 'currency': CURRENCY, 'market_hash_name': ITEM_NAME_RAW}
     try:
-        time.sleep(1.5)
+        await asyncio.sleep(1.5)  # ✅ NÃO BLOQUEIA O EVENT LOOP
         resp = session.get(PRICE_URL, params=params, timeout=10).json()
         if resp.get('success'):
             price_str = resp['lowest_price'].replace('R$', '').replace('.', '').replace(',', '.').strip()
@@ -60,9 +61,9 @@ def get_price():
         print(f"[ERRO Preço]: {e}")
     return None, None
 
-def get_float_csgofloat(inspect_link):
+async def get_float_csgofloat(inspect_link):
     try:
-        time.sleep(1.2)
+        await asyncio.sleep(1.2)  # ✅ NÃO BLOQUEIA
         resp = session.get(CSGOFLOAT_API, params={'url': inspect_link}, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
@@ -71,13 +72,13 @@ def get_float_csgofloat(inspect_link):
         print(f"[ERRO Float API]: {e}")
     return None
 
-def get_listings_with_float():
+async def get_listings_with_float():
     global last_float_success
     if time.time() - last_float_success < 600:
         return None
 
     try:
-        time.sleep(2)
+        await asyncio.sleep(2)  # ✅ NÃO BLOQUEIA
         resp = session.get(LISTINGS_URL, timeout=15)
         if resp.status_code != 200:
             print(f"[ERRO Status]: {resp.status_code}")
@@ -88,27 +89,34 @@ def get_listings_with_float():
 
         for row in soup.select('div.market_listing_row.market_recent_listing_row'):
             price_tag = row.select_one('span.market_listing_price')
-            if not price_tag: continue
+            if not price_tag:
+                continue
             price_text = price_tag.get_text(strip=True)
             price_match = re.search(r'R\$ ([\d.,]+)', price_text)
-            if not price_match: continue
+            if not price_match:
+                continue
             price = float(price_match.group(1).replace('.', '').replace(',', '.'))
 
             link_tag = row.find('a', href=True)
-            if not link_tag: continue
+            if not link_tag:
+                continue
             link = link_tag['href']
 
             script = row.find_next_sibling('script')
-            if not script or not script.string: continue
+            if not script or not script.string:
+                continue
             inspect_match = re.search(r'"(steam://rungame[^"]+)"', script.string)
-            if not inspect_match: continue
+            if not inspect_match:
+                continue
             inspect_link = inspect_match.group(1)
 
-            float_val = get_float_csgofloat(inspect_link)
-            if float_val is None: continue
+            float_val = await get_float_csgofloat(inspect_link)
+            if float_val is None:
+                continue
 
             listings.append({'price': price, 'float': float_val, 'link': link})
-            if len(listings) >= 3: break
+            if len(listings) >= 3:
+                break
 
         if listings:
             last_float_success = time.time()
@@ -126,19 +134,17 @@ async def check_price():
         print("Canal não encontrado!")
         return
 
-    price, volume = get_price()
+    price, volume = await get_price()
     if price is None:
         print("Falha ao pegar preço.")
         return
-    if price >= MAX_PRICE:
-        print(f"Preço: R$ {price:,.2f} → acima do limite.")
-        return
 
-    print(f"ALERTA! R$ {price:,.2f}")
-    listings = get_listings_with_float()
+    print(f"Preço atual: R$ {price:,.2f}")
+
+    listings = await get_listings_with_float()
 
     embed = discord.Embed(
-        title="OPORTUNIDADE! Nomad Knife Urban Masked (FT)",
+        title="Monitoramento - Nomad Knife Urban Masked (FT)",
         color=0x00ff00,
         timestamp=discord.utils.utcnow()
     )
@@ -157,7 +163,7 @@ async def check_price():
         embed.add_field(name="Float", value="Indisponível", inline=False)
         embed.set_footer(text="Tentando novamente em 10 min")
 
-    await channel.send(embed=embed, content="<@274244315423834112>")
+    await channel.send(embed=embed, content="<@274244315423834112> ✅ Atualização a cada 30 min")
 
 @client.event
 async def on_ready():
@@ -167,9 +173,6 @@ async def on_ready():
 
 # ============= INICIAR AMBOS =============
 if __name__ == '__main__':
-    # Inicia Flask em thread separada
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    
-    # Inicia Discord
     client.run(TOKEN)
